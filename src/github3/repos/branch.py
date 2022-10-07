@@ -437,6 +437,10 @@ class BranchProtection(models.GitHubCore):
                 else None
             ),
         }
+        if current_status["required_status_checks"] is not None and all(
+            key in current_status["required_status_checks"] for key in ("contexts", "checks")):
+            # Prefer the new "checks" field when updating
+            del current_status["required_status_checks"]["contexts"]
         edit = {
             "enabled": True,
             "enforce_admins": (
@@ -1186,7 +1190,7 @@ class ProtectionRequiredStatusChecks(models.GitHubCore):
         return self._boolean(resp, 204, 404)
 
     @decorators.requires_auth
-    def update(self, strict=None, contexts=None):
+    def update(self, strict=None, contexts=None, checks=None):
         """Update required status checks for the branch.
 
         This requires admin or owner permissions to the repository and
@@ -1201,6 +1205,10 @@ class ProtectionRequiredStatusChecks(models.GitHubCore):
             Whether this should be strict protection or not.
         :param list contexts:
             A list of context names that should be required.
+        :param list checks:
+            A list of dicts describing status checks that should be required.
+            Keys are: "context": str, "app_id": int (optional).
+            Replaces "contexts".
         :returns:
             A new instance of this class with the updated information
         :rtype:
@@ -1215,8 +1223,12 @@ class ProtectionRequiredStatusChecks(models.GitHubCore):
         json = None
         if strict is not None:
             update_data["strict"] = strict
-        if contexts is not None:
+        if contexts is not None and checks is not None:
+            raise ValueError("cannot supply both 'contexts' and 'checks'")
+        elif contexts is not None:
             update_data["contexts"] = contexts
+        elif checks is not None:
+            update_data["checks"] = checks
         if update_data:
             resp = self._patch(self.url, json=update_data)
             json = self._json(resp, 200)
